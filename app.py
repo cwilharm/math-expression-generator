@@ -9,6 +9,11 @@ st.set_page_config(
     page_title="Mathematischer Ausdrucksgenerator",
     page_icon="∑",
     layout="wide",
+    menu_items={
+        "Get Help": "https://github.com/cwilharm/math-expression-generator",
+        "Report a bug": "https://github.com/cwilharm/math-expression-generator",
+        "About": "@Constantin Wilharm, Feb. 2026",
+    },
 )
 
 # CSS – alle Latex-Elemente werden über data-testid="stLatex" gestylt,
