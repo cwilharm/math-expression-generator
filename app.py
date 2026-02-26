@@ -359,29 +359,25 @@ def sicheres_integral(ausdruck: sp.Expr, vereinfachen: bool = True):
         return None, str(e)
 
 
-def sicheres_loesen(ausdruck: sp.Expr, vereinfachen: bool = True):
-    try:
-        loesungen = sp.solve(ausdruck, x)
-        return [(sp.simplify(s) if vereinfachen else s) for s in loesungen], None
-    except Exception as e:
-        return [], str(e)
-
-
 # ─────────────────────────────────────────────
 # Term-Highlighting
 # ─────────────────────────────────────────────
+# KaTeX unterstützt NUR benannte Farben in \textcolor, keine Hex-Werte.
+# Für die HTML-Legende wird eine eigene Hex-Tabelle geführt.
+# Diese Namen sind sowohl in KaTeX (\textcolor) als auch als CSS-Farbnamen gültig.
+# Dadurch stimmen Legende (HTML) und Ausdruck (KaTeX) in der Farbe exakt überein.
 HIGHLIGHT_FARBEN = [
-    "#58a6ff",  # blau
-    "#ffb86c",  # orange
-    "#50fa7b",  # grün
-    "#ff79c6",  # pink
-    "#f1fa8c",  # gelb
-    "#bd93f9",  # lila
-    "#ff5555",  # rot
-    "#8be9fd",  # cyan
+    "blue",
+    "orange",
+    "green",
+    "violet",
+    "cyan",
+    "teal",
+    "red",
+    "magenta",
 ]
-_INNEN   = "#ffffff"   # innere Argumente (1. Ebene) → weiß
-_INNEN2  = "#ffd700"   # innere Argumente (2. Ebene) → gold
+_INNEN = "gray"  # innere Argumente (1. Ebene) → grau / dezent
+_INNEN2 = "yellow"  # innere Argumente (2. Ebene) → gold
 
 
 def _ist_neg(e: sp.Expr) -> bool:
@@ -398,10 +394,16 @@ def _tc(farbe: str, s: str) -> str:
 
 def _func_tex(cls) -> str:
     return {
-        sp.sin: r"\sin",  sp.cos: r"\cos",  sp.tan: r"\tan",
-        sp.asin: r"\arcsin", sp.acos: r"\arccos", sp.atan: r"\arctan",
-        sp.sinh: r"\sinh", sp.cosh: r"\cosh",
-        sp.log: r"\ln",   sp.exp: r"\exp",
+        sp.sin: r"\sin",
+        sp.cos: r"\cos",
+        sp.tan: r"\tan",
+        sp.asin: r"\arcsin",
+        sp.acos: r"\arccos",
+        sp.atan: r"\arctan",
+        sp.sinh: r"\sinh",
+        sp.cosh: r"\cosh",
+        sp.log: r"\ln",
+        sp.exp: r"\exp",
         sp.Abs: r"\left|\cdot\right|",
     }.get(cls, rf"\operatorname{{{cls.__name__}}}")
 
@@ -423,12 +425,12 @@ def _color_kern(kern: sp.Expr, farbe: str) -> str:
             return _tc(farbe, r"\sqrt[3]{" + _tc(_INNEN, b_l) + r"}")
         if e == sp.Rational(1, 4):
             return _tc(farbe, r"\sqrt[4]{" + _tc(_INNEN, b_l) + r"}")
-        return _tc(farbe, sp.latex(kern))   # allgemeine Potenz: Ganzes einfärben
+        return _tc(farbe, sp.latex(kern))  # allgemeine Potenz: Ganzes einfärben
 
     # ── Zusammengesetzte Funktion ────────────────────────────────────────────
     if isinstance(kern, sp.Function):
-        cls   = type(kern)
-        args  = kern.args
+        cls = type(kern)
+        args = kern.args
 
         # exp(u) → e^{u}
         if cls is sp.exp and len(args) == 1:
@@ -443,20 +445,22 @@ def _color_kern(kern: sp.Expr, farbe: str) -> str:
         # log(x, Basis) → log_b(x)
         if cls is sp.log and len(args) == 2:
             inner_l = _tc(_INNEN, sp.latex(args[0]))
-            b_l     = sp.latex(args[1])
-            return (_tc(farbe, rf"\log_{{{b_l}}}\!\left(")
-                    + inner_l
-                    + _tc(farbe, r"\right)"))
+            b_l = sp.latex(args[1])
+            # \left( und \right) MÜSSEN im selben \textcolor-Block sein
+            return _tc(farbe, rf"\log_{{{b_l}}}\!\left(" + inner_l + r"\right)")
 
         # Alle anderen Funktionen mit einem Argument
         if len(args) == 1:
             inner = args[0]
-            tex   = _func_tex(cls)
+            tex = _func_tex(cls)
             # 2-fach verschachtelt → gold
-            inner_l = (_tc(_INNEN2, sp.latex(inner))
-                       if isinstance(inner, sp.Function)
-                       else _tc(_INNEN, sp.latex(inner)))
-            return _tc(farbe, tex + r"\!\left(") + inner_l + _tc(farbe, r"\right)")
+            inner_l = (
+                _tc(_INNEN2, sp.latex(inner))
+                if isinstance(inner, sp.Function)
+                else _tc(_INNEN, sp.latex(inner))
+            )
+            # \left( und \right) MÜSSEN im selben \textcolor-Block sein
+            return _tc(farbe, tex + r"\!\left(" + inner_l + r"\right)")
 
         return _tc(farbe, sp.latex(kern))
 
@@ -467,10 +471,12 @@ def _color_kern(kern: sp.Expr, farbe: str) -> str:
         if len(andere) == 1:
             return _color_kern(andere[0], farbe)
         if len(andere) == 2:
-            return (_color_kern(andere[0], farbe)
-                    + r"\cdot "
-                    + _color_kern(andere[1], _INNEN))
-        return _tc(farbe, sp.latex(kern))   # >2 Faktoren: Fallback
+            return (
+                _color_kern(andere[0], farbe)
+                + r"\cdot "
+                + _color_kern(andere[1], _INNEN)
+            )
+        return _tc(farbe, sp.latex(kern))  # >2 Faktoren: Fallback
 
     return _tc(farbe, sp.latex(kern))
 
@@ -484,12 +490,11 @@ def _color_addend(addend: sp.Expr, farbe: str) -> str:
         zahlen = [a for a in kern.args if a.is_number]
         andere = [a for a in kern.args if not a.is_number]
         if zahlen and andere:
-            k      = sp.Mul(*zahlen)
-            k_abs  = abs(k)
-            rest   = sp.Mul(*andere) if len(andere) > 1 else andere[0]
-            col    = _color_kern(rest, farbe)
-            return (col if k_abs == 1
-                    else _tc(farbe, sp.latex(k_abs)) + r"\," + col)
+            k = sp.Mul(*zahlen)
+            k_abs = abs(k)
+            rest = sp.Mul(*andere) if len(andere) > 1 else andere[0]
+            col = _color_kern(rest, farbe)
+            return col if k_abs == 1 else _tc(farbe, sp.latex(k_abs)) + r"\," + col
     return _color_kern(kern, farbe)
 
 
@@ -498,7 +503,7 @@ def _struktur(addend: sp.Expr) -> dict:
     kern = -addend if _ist_neg(addend) else addend
     if isinstance(kern, sp.Mul):
         andere = [a for a in kern.args if not a.is_number]
-        kern   = andere[0] if len(andere) == 1 else (sp.Mul(*andere) if andere else kern)
+        kern = andere[0] if len(andere) == 1 else (sp.Mul(*andere) if andere else kern)
 
     if isinstance(kern, sp.exp):
         inner = kern.args[0]
@@ -508,16 +513,18 @@ def _struktur(addend: sp.Expr) -> dict:
         inner = kern.args[0]
         d = {"typ": "funktion", "name": type(kern).__name__, "innen": sp.latex(inner)}
         if isinstance(inner, sp.Function):
-            d["typ"]        = "verschachtelt"
+            d["typ"] = "verschachtelt"
             d["innen_name"] = type(inner).__name__
-            d["innen2"]     = sp.latex(inner.args[0]) if inner.args else "?"
+            d["innen2"] = sp.latex(inner.args[0]) if inner.args else "?"
         return d
 
     if isinstance(kern, sp.Pow):
         b, e = kern.args
-        for frac, label in [(sp.Rational(1,2),"Quadratwurzel"),
-                            (sp.Rational(1,3),"Kubikwurzel"),
-                            (sp.Rational(1,4),"4. Wurzel")]:
+        for frac, label in [
+            (sp.Rational(1, 2), "Quadratwurzel"),
+            (sp.Rational(1, 3), "Kubikwurzel"),
+            (sp.Rational(1, 4), "4. Wurzel"),
+        ]:
             if e == frac:
                 return {"typ": "wurzel", "label": label, "innen": sp.latex(b)}
         return {"typ": "potenz", "basis": sp.latex(b), "exp": sp.latex(e)}
@@ -536,22 +543,53 @@ def highlighting(expr: sp.Expr) -> tuple[str, list[dict]]:
     # Positive zuerst
     addends = sorted(addends, key=lambda a: 1 if _ist_neg(a) else 0)
 
-    teile:   list[str]  = []
+    teile: list[str] = []
     legende: list[dict] = []
 
     for i, addend in enumerate(addends):
-        farbe   = HIGHLIGHT_FARBEN[i % len(HIGHLIGHT_FARBEN)]
+        farbe = HIGHLIGHT_FARBEN[i % len(HIGHLIGHT_FARBEN)]
         ist_neg = _ist_neg(addend)
-        farbig  = _color_addend(addend, farbe)
-        sign    = (r"-\," if ist_neg else "") if i == 0 else (r"-\," if ist_neg else r"+\,")
+        farbig = _color_addend(addend, farbe)
+        sign = (
+            (r"-\," if ist_neg else "") if i == 0 else (r"-\," if ist_neg else r"+\,")
+        )
         teile.append(sign + farbig)
-        legende.append({
-            "farbe":  farbe,
-            "latex":  sp.latex(addend),
-            "info":   _struktur(addend),
-        })
+        legende.append(
+            {
+                "farbe": farbe,
+                "latex": sp.latex(addend),
+                "info": _struktur(addend),
+            }
+        )
 
     return " ".join(teile), legende
+
+
+def _zerlegt_farbig(ausdruck: sp.Expr, op_func, vereinfachen: bool) -> str:
+    """Wendet op_func term-für-term auf ausdruck an und färbt jedes Ergebnis
+    in der Farbe des jeweiligen Ursprungs-Summanden (wie in highlighting())."""
+    addends = sorted(sp.Add.make_args(ausdruck), key=lambda a: 1 if _ist_neg(a) else 0)
+    teile: list[str] = []
+    for i, addend in enumerate(addends):
+        farbe = HIGHLIGHT_FARBEN[i % len(HIGHLIGHT_FARBEN)]
+        try:
+            result = op_func(addend)
+            if vereinfachen:
+                result = sp.simplify(result)
+        except Exception:
+            continue
+        if result == 0:
+            continue
+        ist_neg = _ist_neg(result)
+        abs_result = -result if ist_neg else result
+        colored = _tc(farbe, sp.latex(abs_result))
+        sign = (
+            (r"-\," if ist_neg else "")
+            if not teile
+            else (r"-\," if ist_neg else r"+\,")
+        )
+        teile.append(sign + colored)
+    return " ".join(teile) if teile else _tc("gray", "0")
 
 
 # ─────────────────────────────────────────────
@@ -623,7 +661,7 @@ st.markdown("# ∑ Mathematischer Ausdrucksgenerator")
 st.markdown(
     "Konfiguriere die Konzepte in der Seitenleiste und klicke auf **Generieren**, "
     "um einen zufälligen mathematischen Ausdruck zu erstellen. "
-    "Ableitung, Integral und Lösung lassen sich unten einblenden."
+    "Ableitung und Integral lassen sich unten einblenden."
 )
 
 _, col_btn = st.columns([5, 1])
@@ -644,107 +682,101 @@ if generieren:
 
 ausdruck: sp.Expr = st.session_state.ausdruck
 
+# Highlighting-Flag früh lesen (Checkbox kommt erst nach dem Ausdruck)
+zeige_highlight: bool = st.session_state.get("zeige_highlight", False)
+
 # ─────────────────────────────────────────────
-# Ausdruck anzeigen  (main-expr-Container für größeres CSS-Targeting)
+# Ausdruck anzeigen
 # ─────────────────────────────────────────────
 st.markdown("### Generierter Ausdruck")
 
-with st.container():
-    st.markdown('<div class="main-expr">', unsafe_allow_html=True)
-    st.latex(r"f(x) \;=\; " + sp.latex(ausdruck))
-    st.markdown("</div>", unsafe_allow_html=True)
+if zeige_highlight:
+    try:
+        hl_latex, hl_legende = highlighting(ausdruck)
+        st.latex(r"f(x) \;=\; " + hl_latex)
+        # ── Kompakte Legende ────────────────────────────────────────────────
+        teile = []
+        for i, item in enumerate(hl_legende):
+            # KaTeX-Farbnamen sind auch gültige CSS-Farbnamen → exakte Übereinstimmung
+            html_col = item["farbe"]
+            typ = item["info"].get("typ", "einfach")
+            name = item["info"].get("name", "")
 
+            # Menschenlesbare Unicode-Labels (kein LaTeX – wird in HTML angezeigt)
+            _SUP = {"2": "²", "3": "³", "4": "⁴", "5": "⁵", "-1": "⁻¹", "-2": "⁻²"}
+            _FN = {
+                "log": "ln",
+                "exp": "exp",
+                "sin": "sin",
+                "cos": "cos",
+                "tan": "tan",
+                "sinh": "sinh",
+                "cosh": "cosh",
+                "sqrt": "√",
+                "Abs": "|·|",
+                "asin": "arcsin",
+                "acos": "arccos",
+                "atan": "arctan",
+            }
+            fn = _FN.get(name, name)
+            if typ == "funktion":
+                label = (
+                    "eˣ"
+                    if name == "exp"
+                    else (
+                        "√(…)"
+                        if name == "sqrt"
+                        else "|…|" if name == "Abs" else f"{fn}(…)"
+                    )
+                )
+            elif typ == "verschachtelt":
+                i_name = item["info"].get("innen_name", "g")
+                i_fn = _FN.get(i_name, i_name)
+                label = f"{fn}({i_fn}(…))"
+            elif typ == "wurzel":
+                label = item["info"].get("label", "Wurzel")
+            elif typ == "potenz":
+                exp_s = str(item["info"].get("exp", "n"))
+                label = "x" + _SUP.get(exp_s, f"^{exp_s}")
+            elif typ == "produkt":
+                label = "Produkt"
+            else:
+                label = "Polynom / Konst."
+            teile.append(
+                f'<span style="color:{html_col}; font-weight:600;">■ {label}</span>'
+            )
+        teile.append('<span style="color:#888;">▪ grau = inneres Arg.</span>')
+        st.markdown(
+            '<div style="font-size:0.8rem; margin:-6px 0 8px; line-height:2;">'
+            + " &nbsp; ".join(teile)
+            + "</div>",
+            unsafe_allow_html=True,
+        )
+    except Exception as err:
+        st.latex(r"f(x) \;=\; " + sp.latex(ausdruck))
+        st.caption(f"Highlighting-Fehler: {err}")
+else:
+    st.latex(r"f(x) \;=\; " + sp.latex(ausdruck))
 
 st.markdown("---")
 
 # ─────────────────────────────────────────────
-# Aufklapp-Schalter  (Zeile 1)
+# Aufklapp-Schalter
 # ─────────────────────────────────────────────
-c1, c2, c3, c4 = st.columns(4)
-zeige_abl        = c1.checkbox("📐 Ableitungen anzeigen", value=False)
-zeige_int        = c2.checkbox("∫  Integral anzeigen",    value=False)
-zeige_loes       = c3.checkbox("🔍 f(x) = 0 lösen",      value=False)
-vereinfachen     = c4.checkbox(
+c1, c2, c3 = st.columns(3)
+zeige_abl = c1.checkbox("📐 Ableitungen anzeigen", value=False)
+zeige_int = c2.checkbox("∫  Integral anzeigen", value=False)
+vereinfachen = c3.checkbox(
     "✨ Vereinfachen",
     value=True,
     help="Wendet sp.simplify() an – kürzt Brüche, fasst Terme zusammen und vereinfacht Ausdrücke algebraisch.",
 )
-
-# Zeile 2: Highlighting (eigene Zeile, volle Breite)
-zeige_highlight = st.checkbox(
-    "🎨 Term-Highlighting — Summanden & innere/äußere Funktionen einfärben",
+st.checkbox(
+    "🎨 Term-Highlighting",
     value=False,
-    help=(
-        "Jeder Summand bekommt eine eigene Farbe. "
-        "Innere Argumente von Funktionen werden weiß, "
-        "zweifach-verschachtelte Argumente gold markiert."
-    ),
+    key="zeige_highlight",
+    help="Färbt jeden Summanden im Ausdruck oben in einer eigenen Farbe; innere Funktionsargumente erscheinen grau.",
 )
-
-# ─────────────────────────────────────────────
-# Highlighting-Anzeige
-# ─────────────────────────────────────────────
-if zeige_highlight:
-    st.markdown(
-        '<span class="sec-header" style="background:#16213e; color:#8be9fd;">'
-        "🎨 Term-Highlighting</span>",
-        unsafe_allow_html=True,
-    )
-    try:
-        hl_latex, legende = highlighting(ausdruck)
-        st.latex(r"f(x) \;=\; " + hl_latex)
-
-        # ── Farbcodierungs-Legende ────────────────────────────────────────
-        st.markdown("**Legende**")
-        n     = len(legende)
-        ncols = min(n, 4)
-        cols  = st.columns(ncols)
-        for i, item in enumerate(legende):
-            farbe = item["farbe"]
-            info  = item["info"]
-            with cols[i % ncols]:
-                # Farbiger Summanden-Header
-                st.markdown(
-                    f'<div style="border-left:4px solid {farbe}; padding:6px 12px; '
-                    f'background:#12122a; border-radius:0 6px 6px 0; margin:4px 0;">'
-                    f'<span style="color:{farbe}; font-weight:700;">Summand {i+1}</span>'
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
-                st.latex(item["latex"])
-
-                # Struktur-Info
-                typ = info.get("typ", "einfach")
-                if typ == "funktion":
-                    st.caption(f"Äußere Funktion:  {info['name']}(u)")
-                    st.caption(f"Inneres Arg. (⬜):  u = {info['innen']}")
-                elif typ == "verschachtelt":
-                    st.caption(f"Äußerste Funktion:  {info['name']}(u)")
-                    st.caption(f"Mittlere Funktion (⬜):  u = {info['innen_name']}(v)")
-                    st.caption(f"Innerstes Arg. (🟡):  v = {info['innen2']}")
-                elif typ == "wurzel":
-                    st.caption(f"{info['label']}")
-                    st.caption(f"Inneres Arg. (⬜):  {info['innen']}")
-                elif typ == "potenz":
-                    st.caption(f"Basis: {info['basis']},  Exponent: {info['exp']}")
-                elif typ == "produkt":
-                    st.caption("Produkt der Faktoren:")
-                    for fl in info["faktoren"]:
-                        st.latex(fl)
-                else:
-                    st.caption("Einfacher Term (Polynom / Konstante)")
-
-        # ── Farb-Erklärung ────────────────────────────────────────────────
-        st.markdown(
-            '<div style="margin-top:8px; padding:8px 14px; background:#12122a; '
-            'border-radius:6px; font-size:0.82rem; color:#aaa;">'
-            "⬜ <b>Weiß</b> = inneres Argument (1. Ebene) &nbsp;|&nbsp; "
-            "🟡 <b>Gold</b> = tief verschachteltes Argument (2. Ebene)"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-    except Exception as e:
-        st.error(f"Highlighting-Fehler: {e}")
 
 # ─────────────────────────────────────────────
 # Ableitungen
@@ -762,13 +794,31 @@ if zeige_abl:
 
     st.markdown("**Erste Ableitung — f ′(x)**")
     if abl1 is not None:
-        st.latex(r"f'(x) \;=\; " + sp.latex(abl1))
+        if zeige_highlight:
+            try:
+                tex1 = _zerlegt_farbig(
+                    ausdruck, lambda t: sp.diff(t, x, 1), vereinfachen
+                )
+                st.latex(r"f'(x) \;=\; " + tex1)
+            except Exception:
+                st.latex(r"f'(x) \;=\; " + sp.latex(abl1))
+        else:
+            st.latex(r"f'(x) \;=\; " + sp.latex(abl1))
     else:
         st.error(f"f ′(x) konnte nicht berechnet werden: {err1}")
 
     st.markdown("**Zweite Ableitung — f ″(x)**")
     if abl2 is not None:
-        st.latex(r"f''(x) \;=\; " + sp.latex(abl2))
+        if zeige_highlight:
+            try:
+                tex2 = _zerlegt_farbig(
+                    ausdruck, lambda t: sp.diff(t, x, 2), vereinfachen
+                )
+                st.latex(r"f''(x) \;=\; " + tex2)
+            except Exception:
+                st.latex(r"f''(x) \;=\; " + sp.latex(abl2))
+        else:
+            st.latex(r"f''(x) \;=\; " + sp.latex(abl2))
     else:
         st.error(f"f ″(x) konnte nicht berechnet werden: {err2}")
 
@@ -787,7 +837,16 @@ if zeige_int:
 
     st.markdown('<div class="int-block">', unsafe_allow_html=True)
     if integral is not None:
-        st.latex(r"\int f(x)\, dx \;=\; " + sp.latex(integral) + r" \;+\; C")
+        if zeige_highlight:
+            try:
+                tex_int = _zerlegt_farbig(
+                    ausdruck, lambda t: sp.integrate(t, x), vereinfachen
+                )
+                st.latex(r"\int f(x)\, dx \;=\; " + tex_int + r" \;+\; C")
+            except Exception:
+                st.latex(r"\int f(x)\, dx \;=\; " + sp.latex(integral) + r" \;+\; C")
+        else:
+            st.latex(r"\int f(x)\, dx \;=\; " + sp.latex(integral) + r" \;+\; C")
     else:
         st.error(
             f"SymPy konnte keine geschlossene Stammfunktion finden. {err_int or ''}"
