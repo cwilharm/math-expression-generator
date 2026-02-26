@@ -79,7 +79,7 @@ KONZEPTE = {
     "Polynom  xⁿ": {
         "key": "poly",
         "default": True,
-        "emoji": "📈",
+        "emoji": "",
         "help": "Terme wie 3x², −x³, 5x",
     },
     "Quadratwurzel  √x": {
@@ -102,7 +102,7 @@ KONZEPTE = {
     },
     "Logarithmus": {
         "key": "log",
-        "default": True,
+        "default": False,
         "emoji": "㏒",
         "help": "ln(x), log₁₀(x), log₂(x)",
     },
@@ -117,18 +117,6 @@ KONZEPTE = {
         "default": False,
         "emoji": "½",
         "help": "1/x, 2/x², …",
-    },
-    "Betrag  |x|": {
-        "key": "absval",
-        "default": False,
-        "emoji": "|·|",
-        "help": "|x|, |2x−1|",
-    },
-    "Hyperbolisch  sinh/cosh": {
-        "key": "hyp",
-        "default": False,
-        "emoji": "ℍ",
-        "help": "sinh(x), cosh(x)",
     },
     "Brüche  (a·x+b)/(c·x+d)": {
         "key": "bruch",
